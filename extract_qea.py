@@ -46,6 +46,7 @@ def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
             g.add((broader, RDF.type, OWL.Class))
             g.add((broader, SKOS.inScheme, concept_scheme))
             g.add((broader, RDFS.label, Literal(f"{g.value(concept_scheme, RDFS.label)} code list or type", 'en')))
+            g.add((broader, SKOS.prefLabel, Literal(f"{g.value(concept_scheme, RDFS.label)} code list or type", 'en')))
 
         cl_id = FT[row['name']]
         g.add((cl_id, RDF.type, SKOS.Concept))
@@ -53,6 +54,7 @@ def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
         g.add((cl_id, SKOS.inScheme, concept_scheme))
         g.add((cl_id, SKOS.broader, broader))
         g.add((cl_id, RDFS.label, Literal(row['label'], 'en')))
+        g.add((cl_id, SKOS.prefLabel, Literal(row['label'], 'en')))
         if row['description']:
             g.add((cl_id, SKOS.definition, Literal(row['description'].strip().replace('\r', ''), 'en')))
 
@@ -67,6 +69,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
             g.add((ab, RDF.type, OWL.Class))
             g.add((ab, SKOS.inScheme, concept_scheme))
             g.add((ab, RDFS.label, Literal(f"{g.value(concept_scheme, RDFS.label)} attribute", 'en')))
+            g.add((ab, SKOS.prefLabel, Literal(f"{g.value(concept_scheme, RDFS.label)} attribute", 'en')))
             return ab
         return att_broader
 
@@ -75,6 +78,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
         g.add((obj_id, RDF.type, SKOS.Concept))
         g.add((obj_id, RDF.type, OWL.Class))
         g.add((obj_id, RDFS.label, Literal(row['obj_label'], 'en')))
+        g.add((obj_id, SKOS.prefLabel, Literal(row['obj_label'], 'en')))
         if row['obj_notes']:
             g.add((obj_id, SKOS.definition, Literal(row['obj_notes'].strip().replace('\r', ''), 'en')))
 
@@ -86,6 +90,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
             g.add((att_id, SKOS.broader, att_broader))
             g.add((att_id, RDF.type, OWL.ObjectProperty))
             g.add((att_id, RDFS.label, Literal(row['obj_role'])))
+            g.add((att_id, SKOS.prefLabel, Literal(row['obj_role'])))
             g.add((att_id, RDFS.domain, ft))
             g.add((att_id, RDFS.range, obj_id))
 
@@ -102,6 +107,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
                 g.add((att_id, RDFS.range, FT[row['Type']]))
         g.add((att_id, SKOS.inScheme, concept_scheme))
         g.add((att_id, RDFS.label, Literal(row['Name'], 'en')))
+        g.add((att_id, SKOS.prefLabel, Literal(row['Name'], 'en')))
         g.add((att_id, RDFS.subClassOf, att_broader))
         g.add((att_id, SKOS.broader, att_broader))
         g.add((att_id, RDFS.domain, ft))
@@ -118,6 +124,7 @@ def add_feature_types(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef
         g.add((ft_id, RDF.type, OWL.Class))
         g.add((ft_id, SKOS.inScheme, concept_scheme))
         g.add((ft_id, RDFS.label, Literal(row['label'], 'en')))
+        g.add((ft_id, SKOS.prefLabel, Literal(row['label'], 'en')))
         if row['description']:
             g.add((ft_id, SKOS.definition, Literal(row['description'].strip().replace('\r', ''), 'en')))
 
@@ -137,8 +144,8 @@ def add_foundation_theme(row, con: Connection, theme_descriptions: dict | None) 
     theme_localpart = re.sub('FoundationTheme$', '', re.sub(r'[^a-zA-Z0-9_-]+', '', row['Name']))
     theme_id = FT[theme_localpart]
     g.add((theme_id, RDF.type, SKOS.ConceptScheme))
-    g.add((theme_id, RDF.type, OWL.Class))
     g.add((theme_id, RDFS.label, Literal(row['Name'], 'en')))
+    g.add((theme_id, SKOS.prefLabel, Literal(row['Name'], 'en')))
     description = theme_descriptions.get(theme_localpart)
     if description:
         g.add((theme_id, SKOS.definition, Literal(description, 'en')))
