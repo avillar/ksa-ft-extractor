@@ -1,4 +1,4 @@
-ROOT_FTHEME_ID = 1132
+ROOT_FTHEME_IDS = [1130, 1132]
 
 THEME_CHILDREN_QUERY = '''
     select * from t_package where parent_id = $ID$

@@ -56,7 +56,7 @@ NAMESPACES = {
 logger = logging.getLogger('extract')
 
 
-def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
+def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef, existing_classes: dict):
     broader = None
     for row in cur.execute(queries.CODELISTS_QUERY.replace('$PKG_ID$', str(pkg_id))):
         if not broader:
@@ -68,6 +68,7 @@ def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
             g.add((broader, SKOS.prefLabel, Literal(f"{g.value(concept_scheme, RDFS.label)} code list or type", 'en')))
 
         cl_id = URIRef(f"{concept_scheme}/{row['name']}")
+        existing_classes[row['name']] = cl_id
         g.add((cl_id, RDF.type, SKOS.Concept))
         g.add((cl_id, RDF.type, OWL.Class))
         g.add((cl_id, SKOS.inScheme, concept_scheme))
@@ -78,7 +79,7 @@ def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
             g.add((cl_id, SKOS.definition, Literal(row['description'].strip().replace('\r', ''), 'en')))
 
 
-def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft: URIRef):
+def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft: URIRef, existing_classes: dict):
     att_broader = None
 
     def create_att_broader():
@@ -93,7 +94,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
         return att_broader
 
     for row in cur.execute(queries.ASSOC_QUERY.replace('$OBJ_ID$', str(object_id))):
-        obj_id = URIRef(f"{concept_scheme}/{row['obj_name']}")
+        obj_id = existing_classes.get(row['obj_name'], URIRef(f"{concept_scheme}/{row['obj_name']}"))
         g.add((obj_id, RDF.type, SKOS.Concept))
         g.add((obj_id, RDF.type, OWL.Class))
         g.add((obj_id, RDFS.label, Literal(row['obj_label'], 'en')))
@@ -123,7 +124,8 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
         else:
             g.add((att_id, RDF.type, OWL.ObjectProperty))
             if row['Type'] not in ('URI',):
-                g.add((att_id, RDFS.range, URIRef(f"{concept_scheme}/{row['Type']})")))
+                g.add((att_id, RDFS.range,
+                       existing_classes.get(row['Type'], URIRef(f"{concept_scheme}/{row['Type']}"))))
         g.add((att_id, SKOS.inScheme, concept_scheme))
         g.add((att_id, RDFS.label, Literal(row['Name'], 'en')))
         g.add((att_id, SKOS.prefLabel, Literal(row['Name'], 'en')))
@@ -135,10 +137,13 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
             g.add((att_id, SKOS.definition, Literal(row['Notes'].strip().replace('\r', ''), 'en')))
 
 
-def add_feature_types(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
+def add_feature_types(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef, existing_classes: dict):
     for row in cur.execute(queries.CLS_QUERY.replace('$PKG_ID$', str(pkg_id))):
+        if row['name'] in existing_classes:
+            continue
         ft_localpart = re.sub(r'[^a-zA-Z0-9_-]+', '', row['name'])
         ft_id = URIRef(f"{concept_scheme}/{ft_localpart}")
+        existing_classes[ft_localpart] = ft_id
         g.add((ft_id, RDF.type, SKOS.Concept))
         g.add((ft_id, RDF.type, OWL.Class))
         g.add((ft_id, SKOS.inScheme, concept_scheme))
@@ -148,14 +153,15 @@ def add_feature_types(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef
             g.add((ft_id, SKOS.definition, Literal(row['description'].strip().replace('\r', ''), 'en')))
 
         if row['super_name']:
-            super_id = FT[re.sub(r'[^a-zA-Z0-9_-]+', '', row['super_name'])]
+            super_id = existing_classes.get(row['super_name'], URIRef(f"{concept_scheme}/{row['super_name']}"))
             g.add((ft_id, SKOS.broader, super_id))
             g.add((ft_id, RDFS.subClassOf, super_id))
 
-        add_attributes(cur, row['object_id'], g, concept_scheme, ft_id)
+        add_attributes(cur, row['object_id'], g, concept_scheme, ft_id, existing_classes)
 
 
-def add_foundation_theme(row, con: Connection, theme_descriptions: dict | None) -> tuple[URIRef, Graph]:
+def add_foundation_theme(row, con: Connection, theme_descriptions: dict | None,
+                         existing_classes: dict) -> tuple[URIRef, Graph]:
     logger.info('Reading Foundation Theme %s (%s)', row['Package_ID'], row['Name'])
     g = Graph()
     for ns_pref, ns_url in NAMESPACES.items():
@@ -175,8 +181,8 @@ def add_foundation_theme(row, con: Connection, theme_descriptions: dict | None) 
     pending_pkgs = deque((row['Package_ID'],))
     while pending_pkgs:
         pkg_id = pending_pkgs.popleft()
-        add_feature_types(cur, pkg_id, g, theme_id)
-        add_codelists(cur, pkg_id, g, theme_id)
+        add_feature_types(cur, pkg_id, g, theme_id, existing_classes)
+        add_codelists(cur, pkg_id, g, theme_id, existing_classes)
         pending_pkgs.extend(x['Package_ID']
                             for x in cur.execute(queries.THEME_CHILDREN_QUERY.replace('$ID$', str(pkg_id))))
 
@@ -207,11 +213,15 @@ def _main():
         con.row_factory = sqlite3.Row
         cur = con.cursor()
         theme_graphs: dict[URIRef, Graph] = {}
-        for row in cur.execute(queries.THEME_CHILDREN_QUERY.replace('$ID$', str(queries.ROOT_FTHEME_ID))):
-            theme_id, g = add_foundation_theme(row, con, theme_descriptions)
-            theme_graphs[theme_id] = g
-            for t in g:
-                full_graph.add(t)
+        existing_classes = {}
+        for pkg_id in queries.ROOT_FTHEME_IDS:
+            for row in cur.execute(queries.THEME_CHILDREN_QUERY.replace('$ID$', str(pkg_id))):
+                theme_id, g = add_foundation_theme(row, con, theme_descriptions, existing_classes)
+                theme_graphs[theme_id] = g
+                for t in g:
+                    full_graph.add(t)
+                existing_classes.update({str(c).rsplit('/', 1)[1]: c
+                                         for c in g.subjects(RDF.type, SKOS.Concept)})
 
         # Remove unknown ranges
         for b in full_graph.query(INVALID_RANGES_QUERY).bindings:
