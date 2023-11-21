@@ -33,6 +33,25 @@ SELECT DISTINCT ?r WHERE {
   FILTER NOT EXISTS {?r ?p ?o}
 }
 '''
+NAMESPACES = {
+    'nationalAddress': 'https://w3id.org/ksa/feature-types/NationalAddress/',
+    'landUse': 'https://w3id.org/ksa/feature-types/LandUse/',
+    'transport': 'https://w3id.org/ksa/feature-types/Transport/',
+    'physInfra': 'https://w3id.org/ksa/feature-types/PhysicalInfrastructureTheme/',
+    'landCover': 'https://w3id.org/ksa/feature-types/LandCover/',
+    'buildings': 'https://w3id.org/ksa/feature-types/BuildingsTheme/',
+    'water': 'https://w3id.org/ksa/feature-types/Water/',
+    'popDemo': 'https://w3id.org/ksa/feature-types/PopulationandDemographicsTheme/',
+    'elevation': 'https://w3id.org/ksa/feature-types/Elevation/',
+    'landParcels': 'https://w3id.org/ksa/feature-types/LandParcels/',
+    'admRegions': 'https://w3id.org/ksa/feature-types/AdministrativeRegions/',
+    'sansrs': 'https://w3id.org/ksa/feature-types/SANSRS/',
+    'geoNames': 'https://w3id.org/ksa/feature-types/GeographicalNames/',
+    'imagery': 'https://w3id.org/ksa/feature-types/Imagery/',
+    'geology': 'https://w3id.org/ksa/feature-types/Geology/',
+    'ksa-ft': FT,
+    'ogc-ft': 'http://www.opengis.net/def/metamodel/featuretypes/',
+}
 
 logger = logging.getLogger('extract')
 
@@ -48,7 +67,7 @@ def add_codelists(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
             g.add((broader, RDFS.label, Literal(f"{g.value(concept_scheme, RDFS.label)} code list or type", 'en')))
             g.add((broader, SKOS.prefLabel, Literal(f"{g.value(concept_scheme, RDFS.label)} code list or type", 'en')))
 
-        cl_id = FT[row['name']]
+        cl_id = URIRef(f"{concept_scheme}/{row['name']}")
         g.add((cl_id, RDF.type, SKOS.Concept))
         g.add((cl_id, RDF.type, OWL.Class))
         g.add((cl_id, SKOS.inScheme, concept_scheme))
@@ -74,7 +93,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
         return att_broader
 
     for row in cur.execute(queries.ASSOC_QUERY.replace('$OBJ_ID$', str(object_id))):
-        obj_id = FT[row['obj_name']]
+        obj_id = URIRef(f"{concept_scheme}/{row['obj_name']}")
         g.add((obj_id, RDF.type, SKOS.Concept))
         g.add((obj_id, RDF.type, OWL.Class))
         g.add((obj_id, RDFS.label, Literal(row['obj_label'], 'en')))
@@ -104,7 +123,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
         else:
             g.add((att_id, RDF.type, OWL.ObjectProperty))
             if row['Type'] not in ('URI',):
-                g.add((att_id, RDFS.range, FT[row['Type']]))
+                g.add((att_id, RDFS.range, URIRef(f"{concept_scheme}/{row['Type']})")))
         g.add((att_id, SKOS.inScheme, concept_scheme))
         g.add((att_id, RDFS.label, Literal(row['Name'], 'en')))
         g.add((att_id, SKOS.prefLabel, Literal(row['Name'], 'en')))
@@ -119,7 +138,7 @@ def add_attributes(cur: Cursor, object_id, g: Graph, concept_scheme: URIRef, ft:
 def add_feature_types(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef):
     for row in cur.execute(queries.CLS_QUERY.replace('$PKG_ID$', str(pkg_id))):
         ft_localpart = re.sub(r'[^a-zA-Z0-9_-]+', '', row['name'])
-        ft_id = FT[ft_localpart]
+        ft_id = URIRef(f"{concept_scheme}/{ft_localpart}")
         g.add((ft_id, RDF.type, SKOS.Concept))
         g.add((ft_id, RDF.type, OWL.Class))
         g.add((ft_id, SKOS.inScheme, concept_scheme))
@@ -139,8 +158,9 @@ def add_feature_types(cur: Cursor, pkg_id: int, g: Graph, concept_scheme: URIRef
 def add_foundation_theme(row, con: Connection, theme_descriptions: dict | None) -> tuple[URIRef, Graph]:
     logger.info('Reading Foundation Theme %s (%s)', row['Package_ID'], row['Name'])
     g = Graph()
-    g.bind('ksa-ft', FT)
-    g.bind('ogc-ft', 'http://www.opengis.net/def/metamodel/featuretypes/')
+    for ns_pref, ns_url in NAMESPACES.items():
+        g.bind(ns_pref, ns_url)
+        g.bind(f"{ns_pref}-att", f"{ns_url}attribute/")
     theme_localpart = re.sub('FoundationTheme$', '', re.sub(r'[^a-zA-Z0-9_-]+', '', row['Name']))
     theme_id = FT[theme_localpart]
     g.add((theme_id, RDF.type, SKOS.ConceptScheme))
@@ -208,4 +228,3 @@ def _main():
 
 if __name__ == '__main__':
     _main()
-
